@@ -17,6 +17,12 @@ variables:
   dockerfilePath: '**/Dockerfile'
   tag: '$(Build.BuildId)'
   imagePullSecret: 'acr4pocd20f-auth'
+  CACHE_FOLDER: $(Pipeline.Workspace)/cache/
+  SYSDIG_SECURE_ENDPOINT: "https://eu1.app.sysdig.com"
+  REGISTRY_HOST: "acr4poc.azurecr.io"
+  IMAGE_NAME: "karthikmahalipipelinesjavascriptdocker"
+  IMAGE_TAG: "118"
+  REGISTRY_CONNECTION: "acr4poc"
 
   # Agent VM image name
   vmImageName: 'ubuntu-latest'
@@ -79,6 +85,44 @@ stages:
                 $(imagePullSecret)
               containers: |
                 $(containerRegistry)/$(imageRepository):$(tag)
+
+          - task: Cache@2
+            inputs:
+              key: |
+                sysdig-cli-scanner-cache | "$(Agent.OS)" | "$(CACHE_FOLDER)/sysdig-cli-scanner" | "$(CACHE_FOLDER)/latest_version.txt" | "$(CACHE_FOLDER)/db/main.db.meta.json" | "$(CACHE_FOLDER)/scanner-cache/inlineScannerCache.db"
+              restoreKeys: |
+                sysdig-cli-scanner-cache | "$(Agent.OS)"
+                sysdig-cli-scanner-cache
+              path: $(CACHE_FOLDER)
+            displayName: Cache sysdig-cli-scanner and databases
+
+           - script: |
+              curl -sLO https://download.sysdig.com/scanning/sysdig-cli-scanner/latest_version.txt
+              mkdir -p $(CACHE_FOLDER)/db/
+              if [ ! -f $(CACHE_FOLDER)/latest_version.txt ] || [ $(cat ./latest_version.txt) != $(cat $(CACHE_FOLDER)/latest_version.txt) ]; then
+                cp ./latest_version.txt $(CACHE_FOLDER)/latest_version.txt
+                curl -sL -o $(CACHE_FOLDER)/sysdig-cli-scanner "https://download.sysdig.com/scanning/bin/sysdig-cli-scanner/$(cat $(CACHE_FOLDER)/latest_version.txt)/linux/amd64/sysdig-cli-scanner"
+                chmod +x $(CACHE_FOLDER)/sysdig-cli-scanner
+              else
+                echo "sysdig-cli-scanner latest version already downloaded"
+              fi
+            displayName: Download the sysdig-cli-scanner if needed
+
+        - script: |
+            $(CACHE_FOLDER)/sysdig-cli-scanner \
+              --apiurl $(SYSDIG_SECURE_ENDPOINT) \
+              --console-log \
+              --dbpath=$(CACHE_FOLDER)/db/ \
+              --cachepath=$(CACHE_FOLDER)/scanner-cache/ \
+                $(containerRegistry)/$(imageRepository):$(tag) \
+          displayName: Run the sysdig-cli-scanner
+          env:
+            SECURE_API_TOKEN: $(TOKEN) 
+
+        - script: |
+              # Publish scan results to Sysdig
+              sysdig-agent-cli image push-scan-results $(containerRegistry)/$(imageRepository):$(tag)
+            displayName: 'Publish Scan Results to Sysdig'
 
   - deployment: DeployPullRequest
     displayName: Deploy Pull request
