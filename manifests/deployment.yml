@@ -1,0 +1,19 @@
+apiVersion : apps/v1
+kind: Deployment
+metadata:
+  name: karthikmahalipipelinesjavascriptdocker 
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: karthikmahalipipelinesjavascriptdocker
+  template:
+    metadata:
+      labels:
+        app: karthikmahalipipelinesjavascriptdocker 
+    spec:
+      containers:
+        - name: karthikmahalipipelinesjavascriptdocker 
+          image: acr4poc.azurecr.io/karthikmahalipipelinesjavascriptdocker
+          ports:
+          - containerPort: 8080
